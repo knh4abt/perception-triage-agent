@@ -5,7 +5,7 @@ on: [push, pull_request]
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: ubuntu-latest moves to 26 in Oct 2026
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -20,7 +20,7 @@ jobs:
 
   docker:
     needs: lint-and-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: ubuntu-latest moves to 26 in Oct 2026
     steps:
       - uses: actions/checkout@v5
       - run: docker build -t perception-triage .
