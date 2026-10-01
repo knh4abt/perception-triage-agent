@@ -49,15 +49,18 @@ async def run(out_dir: Path) -> str:
 
 
 async def run_graph(cfg: dict, agent_tools: list, out_dir: Path) -> str:
-    graph = build_graph(get_llm(cfg), agent_tools)
-    # recursion_limit caps the analyst <-> tools loop, so a confused model cannot spin forever.
+    graph = build_graph(get_llm(cfg), agent_tools, out_dir / "metrics.json",
+                        cfg["agent"]["max_revisions"])
+    # recursion_limit is a second safety net on top of max_revisions: no loop can spin forever.
     state = await graph.ainvoke(
         {"messages": [HumanMessage("Analyse the detector and write the report.")]},
-        config={"recursion_limit": 20},
+        config={"recursion_limit": 40},
     )
     for msg in state["messages"]:
         for call in getattr(msg, "tool_calls", None) or []:
             print(f"  tool call: {call['name']}")
+    print(f"  reviewer sent the draft back {state.get('revisions', 0)} time(s); "
+          f"unresolved issues: {len(state.get('issues', []))}")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "report.md"
     path.write_text("# Where does YOLOv8n fail?\n\n" + state["report"].strip() + "\n", encoding="utf-8")

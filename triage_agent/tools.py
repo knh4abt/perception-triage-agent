@@ -14,7 +14,7 @@ from pathlib import Path
 from triage_agent.config import load_config
 from triage_agent.detector import run_detection as _detect
 from triage_agent.detector import save_predictions
-from triage_agent.metrics import compute_metrics, load_ground_truth
+from triage_agent.metrics import compute_metrics, largest_miss_group, load_ground_truth
 
 
 def _paths(cfg: dict) -> tuple[Path, Path]:
@@ -84,6 +84,7 @@ def summarize_findings() -> dict:
     m = _load_metrics()
     per_class = m["per_class"]
     by_size = m["recall_by_size"]
+    size, cls, missed = largest_miss_group(m)
     confusions = sorted(((gt, pred, n) for gt, row in m["confusion"].items()
                          for pred, n in row.items() if pred != "missed"), key=lambda t: -t[2])
     # Precomputing comparisons here keeps arithmetic out of the LLM, which an 8B model
@@ -94,6 +95,9 @@ def summarize_findings() -> dict:
         "lowest_precision_class": min(per_class, key=lambda c: per_class[c]["precision"]),
         "small_vs_large_recall": {c: {"small": s["small"]["recall"], "large": s["large"]["recall"],
                                       "num_small": s["small"]["num_gt"]} for c, s in by_size.items()},
+        # Given as a ready sentence: without the missed count, the model once wrote the
+        # total (360) as the number missed (227).
+        "largest_failure": f"{size} {cls}: {missed} of {by_size[cls][size]['num_gt']} missed",
         "top_confusions": [f"{gt} detected as {pred}: {n}" for gt, pred, n in confusions[:3]],
         "num_images_without_detections": len(m["images_without_detections"]),
     }

@@ -142,13 +142,20 @@ def compute_metrics(preds: list[dict], gts: list[dict], file_names: list[str],
         "overall": {**total, "precision": _ratio(total["tp"], total["tp"] + total["fp"]),
                     "recall": _ratio(total["tp"], total["tp"] + total["fn"])},
         "per_class": per_class,
-        "recall_by_size": {c: {s: {"recall": _ratio(hit, n), "num_gt": n}
+        "recall_by_size": {c: {s: {"recall": _ratio(hit, n), "num_gt": n, "missed": n - hit}
                                for s, (hit, n) in sizes.items()} for c, sizes in size_hits.items()},
         "confusion": {c: dict(v) for c, v in confusion.items()},
         "background_false_positives": dict(background_fp),
         "images_without_detections": [r["file_name"] for r in per_image if r["tp"] + r["fp"] == 0],
         "hard_images": hard,
     }
+
+
+def largest_miss_group(metrics: dict) -> tuple[str, str, int]:
+    """(size, class, number missed) for the size/class cell with the most missed objects."""
+    cells = [(size, cls, s["missed"])
+             for cls, sizes in metrics["recall_by_size"].items() for size, s in sizes.items()]
+    return max(cells, key=lambda c: c[2])
 
 
 def main() -> None:
