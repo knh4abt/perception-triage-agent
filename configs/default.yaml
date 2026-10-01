@@ -22,6 +22,7 @@ llm:
   temperature: 0.0                     # deterministic output, so reports are comparable between runs
 
 agent:
+  use_mcp: true                        # false: call tools in-process (handy for debugging)
   max_revisions: 2                     # Reviewer can send the draft back at most twice
 
 output:

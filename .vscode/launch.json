@@ -1,0 +1,40 @@
+{
+    // F5 in VS Code runs the selected entry. "module" is the same as `python -m ...`
+    // from the project root, so imports work exactly as on the command line.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "triage: full run (cli)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "triage_agent.cli",
+            "args": ["--images", "data/sample", "--out", "reports"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "triage: detector only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "triage_agent.detector",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "triage: metrics only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "triage_agent.metrics",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "data: download COCO sample",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "scripts.download_data",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
