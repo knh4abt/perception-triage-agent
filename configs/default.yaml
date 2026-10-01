@@ -1,0 +1,28 @@
+# Single source of truth for paths, thresholds and the LLM choice.
+# Secrets (Azure keys) never go here; they live in .env.
+
+data:
+  annotations: data/annotations/instances_val2017.json
+  images: data/sample
+  classes: [person, car, bus, truck]   # the only classes we evaluate
+  num_images: 200
+
+detector:
+  weights: yolov8n.pt                  # downloaded by ultralytics on first use
+  conf_threshold: 0.25                 # ultralytics default; low enough to keep weak detections for analysis
+  device: cpu                          # 200 images run fine on CPU; set to 0 for the first GPU
+
+eval:
+  iou_threshold: 0.5                   # PASCAL VOC / COCO AP50 convention
+  num_hard_examples: 10
+
+llm:
+  provider: ollama                     # or: azure (needs the keys in .env)
+  ollama_model: llama3.1:8b
+  temperature: 0.0                     # deterministic output, so reports are comparable between runs
+
+agent:
+  max_revisions: 2                     # Reviewer can send the draft back at most twice
+
+output:
+  dir: reports

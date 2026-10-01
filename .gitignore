@@ -1,0 +1,27 @@
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# ----- secrets (only .env.example is committed) -----
+.env
+
+# ----- editors (launch.json is part of the project) -----
+.vscode/*
+!.vscode/launch.json
+.idea/
+
+# ----- data and model weights (downloaded, never committed) -----
+data/
+*.pt
+
+# ----- private notes and assistant config -----
+_study/
+CLAUDE.md
+.claude/
+
+# ----- logs -----
+*.log
