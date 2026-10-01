@@ -1,0 +1,30 @@
+# Runs on every push: lint, unit tests (no LLM, no model download), then a Docker build.
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      # CPU torch first, same reason as in the Dockerfile: the CUDA wheel is ~2 GB.
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt
+      - run: ruff check .
+      - run: pytest -q
+
+  docker:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t perception-triage .
+      # Smoke test: the image starts and every module imports. The full run needs Ollama and data.
+      - run: >
+          docker run --rm --entrypoint python perception-triage -c
+          "import triage_agent.cli, triage_agent.mcp_server; print('image ok')"

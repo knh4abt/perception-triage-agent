@@ -29,6 +29,15 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "tests: pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-q"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "data: download COCO sample",
             "type": "debugpy",
             "request": "launch",

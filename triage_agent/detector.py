@@ -28,7 +28,7 @@ def run_detection(images_dir: Path, cfg: dict) -> list[dict]:
     for r in results:
         file_name = Path(r.path).name
         for (x1, y1, x2, y2), cls, score in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(),
-                                                r.boxes.conf.tolist()):
+                                                r.boxes.conf.tolist(), strict=True):
             predictions.append({
                 "file_name": file_name,
                 "category": model.names[int(cls)],
