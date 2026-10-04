@@ -20,6 +20,7 @@ llm:
   provider: ollama                     # or: azure (needs the keys in .env)
   ollama_model: llama3.1:8b
   temperature: 0.0                     # deterministic output, so reports are comparable between runs
+  max_tokens: 700                      # hard cap per answer; JSON mode once generated without end
 
 agent:
   use_mcp: true                        # false: call tools in-process (handy for debugging)

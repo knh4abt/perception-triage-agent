@@ -27,4 +27,4 @@ jobs:
       # Smoke test: the image starts and every module imports. The full run needs Ollama and data.
       - run: >
           docker run --rm --entrypoint python perception-triage -c
-          "import triage_agent.cli, triage_agent.mcp_server; print('image ok')"
+          "import triage_agent.cli, triage_agent.mcp_servers.metrics_server, triage_agent.mcp_servers.images_server; print('image ok')"

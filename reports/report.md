@@ -1,15 +1,27 @@
 # Where does YOLOv8n fail?
 
 ## Summary
-The overall precision of the detector is 0.822, and the overall recall is 0.603. The weakest class is the truck, with a precision of 0.435 and a recall of 0.333. The main failure mode is the detector's inability to detect small objects, particularly persons, with 227 out of 360 small persons missed.
 
-## Where it fails
-The largest failure is the detection of small persons, with 227 out of 360 small persons missed. Other size effects include the detection of small cars, with 58 out of 74 small cars missed, and small buses, with 5 out of 6 small buses missed. Class confusions include cars being detected as trucks (4 times), trucks being detected as buses (2 times), and trucks being detected as cars (2 times). There are 7 images without any detections.
+The object detector YOLOv8n has a precision of 0.822 and a recall of 0.603 overall. The weakest class is the truck, with a precision of 0.435 and a recall of 0.333. The main failure mode is the detection of small objects, with 227 out of 360 small person objects being missed.
+
+## Where it fails: object size
+
+The largest failure of YOLOv8n on COCO street images is that 227 out of 360 small person objects were missed. The recall for small person objects is 0.369, which is significantly lower than the recall for medium (0.801) and large (0.966) person objects. Similarly, the recall for small car objects is 0.216, which is lower than the recall for medium (0.655) and large (0.714) car objects.
+
+## Where it fails: class confusions and false alarms
+
+The real classes detected as a different class are the truck, which was detected as a car 13 times. The false alarms come from the background, with 9 truck instances being false positives. The class with the lowest precision is the truck, with a precision of 0.435.
+
+## What the hard images have in common
+
+The hardest images are characterized by their high brightness, with a mean brightness of 128.0, which is significantly higher than the mean brightness of all images, which is 112.9. The number of objects in the hardest images is also higher, with a mean of 13.5, compared to 4.9 for all images. The median object area in the hardest images is 242, which is lower than the median object area of 3728 for all images. The share of small objects in the hardest images is also higher, with a mean of 0.836, compared to 0.276 for all images.
+
+The first file name of the hardest images is "000000490936.jpg". The statistics for this image are: num_gt = 16, tp = 4, fp = 3, fn = 12, missed = ["car", "person", "truck"], false_alarms = ["person", "truck"].
 
 ## Recommendations
-1.  **Improve small object detection**: The detector struggles to detect small objects, particularly persons. This could be addressed by using a more advanced object detection algorithm or by fine-tuning the current model on a dataset with a focus on small object detection.
-2.  **Class confusion reduction**: The detector often confuses cars with trucks and trucks with buses. This could be addressed by increasing the number of training samples for these classes or by using a more advanced classification algorithm.
-3.  **Image without detections analysis**: The 7 images without any detections should be analyzed to understand why the detector failed to detect any objects in these images. This could be due to a variety of reasons, including poor image quality, lack of objects in the image, or issues with the detector's configuration.
+
+1. Investigate the effect of high brightness on object detection, as the hardest images have a mean brightness of 128.0.
+2. Improve the detection of small objects, as the recall for small person objects is 0.369 and the recall for small car objects is 0.216.
 
 ## Per-class results
 
@@ -48,3 +60,12 @@ Small < 32x32 px, large >= 96x96 px (COCO definition).
 | 000000015517.jpg | 13 | 4 | 9 | 0 | bus |
 
 Images with no detections at all: 000000177213.jpg, 000000222735.jpg, 000000263966.jpg, 000000354753.jpg, 000000395633.jpg, 000000533145.jpg, 000000569059.jpg
+
+## Reviewer notes (unresolved)
+
+- confusion: "The class with the lowest precision is the truck, with a precision of 0.435." contradicts: The class with the lowest precision is the truck
+- confusion: "The false alarms come from the background, with 9 truck instances being false positives." contradicts: a real truck was detected as bus: 2 times
+- confusion: "The real classes detected as a different class are the truck, which was detected as a car 13 times." contradicts: a real car was detected as truck: 4 times
+- editor: "Improve the detection of small objects, as the recall for small person objects is 0.369 and the recall for small car objects is 0.216." contradicts: The recall for small person objects is 0.369, which is higher than the recall for small car objects (0.216).
+- editor: "Investigate the effect of high brightness on object detection, as the hardest images have a mean brightness of 128.0." contradicts: The hardest images have a mean brightness of 128.0, but the all images have a mean brightness of 112.9, which is lower.
+- editor: "The weakest class is the truck, with a precision of 0.435 and a recall of 0.333." contradicts: The recall for truck is 0.333, but the precision is 0.435, which is not the weakest class.

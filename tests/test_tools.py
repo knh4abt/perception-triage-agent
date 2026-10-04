@@ -1,10 +1,12 @@
-"""The agent's tools on a tiny fake dataset: no model download, no LLM call."""
+"""The agents' tools and image statistics on a tiny fake dataset: no model, no LLM call."""
 
 import json
 
 import pytest
+from PIL import Image
 
 from triage_agent import tools
+from triage_agent.image_stats import brightness, compare_groups
 
 
 @pytest.fixture
@@ -13,8 +15,8 @@ def workspace(tmp_path, monkeypatch):
     out = tmp_path / "out"
     images.mkdir()
     out.mkdir()
-    for name in ["a.jpg", "b.jpg"]:
-        (images / name).write_bytes(b"")  # tools only list file names; content is never read
+    Image.new("RGB", (64, 64), (200, 200, 200)).save(images / "a.jpg")  # bright
+    Image.new("RGB", (64, 64), (20, 20, 20)).save(images / "b.jpg")     # dark
 
     coco = {
         "images": [{"id": 1, "file_name": "a.jpg"}, {"id": 2, "file_name": "b.jpg"}],
@@ -39,23 +41,37 @@ def workspace(tmp_path, monkeypatch):
     return out
 
 
-def test_run_detection_reuses_existing_predictions(workspace):
-    # rerun=False must not load YOLO: the fake weights file does not exist.
-    assert tools.run_detection() == {"num_images": 2, "num_boxes": 1, "boxes_per_class": {"person": 1}}
+def test_prepare_reuses_predictions_and_writes_reference_files(workspace):
+    # rerun_detection=False must not load YOLO: the fake weights file does not exist.
+    overview = tools.prepare()
+    assert overview["num_boxes"] == 1
+    assert overview["lowest_recall_class"] == "car"
+    assert (workspace / "metrics.json").exists() and (workspace / "image_stats.json").exists()
 
 
-def test_compute_class_metrics_writes_metrics_json(workspace):
-    result = tools.compute_class_metrics()
-    assert result["per_class"]["person"]["recall"] == 1.0
-    assert result["per_class"]["car"]["fn"] == 1
-    assert (workspace / "metrics.json").exists()
+def test_metrics_tools(workspace):
+    tools.prepare()
+    assert tools.size_breakdown()["largest_failure"] == "1 of 1 small car objects were missed"
+    assert tools.hard_examples(n=1)["hard_images"][0]["file_name"] == "b.jpg"
+    assert tools.false_alarms()["lowest_precision_class"] == "car"
 
 
-def test_hard_examples_and_summary(workspace):
-    hard = tools.find_hard_examples(n=1)
-    assert hard["hard_images"][0]["file_name"] == "b.jpg"
-    assert hard["images_without_detections"] == ["b.jpg"]
+def test_image_tools(workspace):
+    tools.prepare()
+    assert tools.image_stats("b.jpg")["brightness"] < 70
+    assert tools.image_stats("missing.jpg") == {"error": "unknown image missing.jpg"}
+    comparison = tools.compare_hard_vs_all()
+    assert comparison["all_images"]["num_images"] == 2
 
-    summary = tools.summarize_findings()
-    assert summary["lowest_recall_class"] == "car"
-    assert summary["largest_failure"] == "small car: 1 of 1 missed"
+
+def test_brightness_of_plain_images(tmp_path):
+    Image.new("RGB", (32, 32), (100, 100, 100)).save(tmp_path / "grey.png")
+    assert brightness(tmp_path / "grey.png") == pytest.approx(100, abs=1)
+
+
+def test_compare_groups_counts_dark_images():
+    stats = {"a": {"brightness": 30.0, "num_objects": 10, "median_object_area": 100, "small_share": 1.0},
+             "b": {"brightness": 150.0, "num_objects": 2, "median_object_area": 5000, "small_share": 0.0}}
+    result = compare_groups(stats, ["a"])
+    assert result["hard_images"]["dark_images"] == 1
+    assert result["all_images"]["mean_num_objects"] == 6.0

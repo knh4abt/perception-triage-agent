@@ -15,7 +15,11 @@ def get_llm(cfg: dict) -> BaseChatModel:
 
         # Endpoint, key and API version are read from the environment (.env).
         return AzureChatOpenAI(azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-                               temperature=llm_cfg["temperature"])
+                               temperature=llm_cfg["temperature"],
+                               max_tokens=llm_cfg.get("max_tokens", 700))
     from langchain_ollama import ChatOllama
 
-    return ChatOllama(model=llm_cfg["ollama_model"], temperature=llm_cfg["temperature"])
+    # num_predict caps every answer: with forced JSON output an 8B model sometimes never
+    # stops generating, which looked like a hang. A bounded call fails visibly instead.
+    return ChatOllama(model=llm_cfg["ollama_model"], temperature=llm_cfg["temperature"],
+                      num_predict=llm_cfg.get("max_tokens", 700))

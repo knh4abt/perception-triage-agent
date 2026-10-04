@@ -1,11 +1,28 @@
-"""The data parts of report.md, rendered by code straight from metrics.json.
+"""report.md assembled by code: headings, tables and lists.
 
-The LLM writes only the interpretation (summary, where it fails, recommendations).
-Tables and lists are copied by code: an 8B model invented per-class breakdowns for
-hard images when it wrote them itself.
+The agents write only plain paragraphs. Code places them under fixed headings and adds
+every table straight from metrics.json: an 8B model invented per-class breakdowns for
+hard images and changed heading formats when it wrote the whole report itself.
 """
 
 from __future__ import annotations
+
+from triage_agent.agents import SPECIALISTS
+
+
+def render_report(summary: str, sections: dict[str, str], recommendations: list[str],
+                  metrics: dict, open_issues: dict[str, list[str]]) -> str:
+    parts = ["# Where does YOLOv8n fail?", "", "## Summary", "", summary.strip()]
+    for spec in SPECIALISTS:
+        parts += ["", f"## {spec.heading}", "", sections.get(spec.section, "(missing)").strip()]
+    parts += ["", "## Recommendations", ""]
+    parts += [f"{i}. {r.strip()}" for i, r in enumerate(recommendations, 1)]
+    parts += ["", render_tables(metrics)]
+    if open_issues:
+        # Out of revisions: ship the report, but say openly what is still unverified.
+        parts += ["", "## Reviewer notes (unresolved)", ""]
+        parts += [f"- {section}: {issue}" for section, found in open_issues.items() for issue in found]
+    return "\n".join(parts) + "\n"
 
 
 def render_tables(metrics: dict) -> str:

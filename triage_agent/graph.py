@@ -1,109 +1,196 @@
-"""The agents as an explicit LangGraph.
+"""The multi-agent workflow as an explicit LangGraph.
 
-    START -> analyst <-> tools          (analyst calls tools until it has the numbers)
-             analyst -> reviewer        (its last message is the report draft)
-             reviewer -> analyst        (issues found, revisions left: rewrite)
-             reviewer -> finish -> END  (approved, or out of revisions)
+    START -> prepare                      code: detection, metrics, image stats
+          -> specialist x3 (parallel)     size, confusion, hard_images (Send fan-out)
+          -> editor                       summary + recommendations
+          -> reviewer                     code checks + LLM check, per section
+               failed sections -> back to ONLY the specialists that own them
+               only editor issues -> editor
+          -> human_approval               pauses for a person when enabled (interrupt)
+          -> finish                       headings and tables added by code
 
-An explicit graph instead of a prebuilt agent, so every step and every loop limit is
-visible in one place.
+Fan-out is fixed in code, not chosen by an LLM supervisor: every specialist must run for
+a full report, so letting an 8B model route would only add a way to fail.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import operator
 from pathlib import Path
 from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
+from langgraph.types import Send, interrupt
 
-from triage_agent.report import render_tables
+from triage_agent.agents import (
+    EDITOR_PROMPT,
+    SECTIONS,
+    SPECIALISTS,
+    build_specialist,
+    parse_editor,
+    specialist_request,
+)
+from triage_agent.report import render_report
 from triage_agent.review import (
     REVIEWER_PROMPT,
-    Review,
-    check_coverage,
-    check_numbers,
-    review_facts,
+    SectionReview,
+    check_sections,
+    grounded_issues,
+    section_facts,
 )
 
-ANALYST_PROMPT = """You analyse where an object detector (YOLOv8n) fails on COCO street images.
 
-Steps:
-1. Call run_detection, then compute_class_metrics, find_hard_examples and summarize_findings.
-2. Then write your interpretation in Markdown with exactly these three headings:
-   ## Summary (3 sentences: overall precision and recall, the weakest class, the main failure mode)
-   ## Where it fails (the largest failure with its exact missed count, other size effects,
-      class confusions, images with no detections)
-   ## Recommendations (2-3 concrete next steps that follow from the failures)
-
-Tables and the list of hard images are added automatically: do not write tables or list images.
-Rules: use only numbers returned by the tools, copied exactly. Never estimate or round
-differently. If a number is not in a tool result, do not write it."""
+def merge_dicts(old: dict, new: dict) -> dict:
+    # Parallel specialists each return {their_section: text}; merging keeps all of them,
+    # and a rewrite replaces only the section it belongs to.
+    return {**(old or {}), **new}
 
 
-class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
-    report: str
+class State(TypedDict, total=False):
+    overview: dict
+    sections: Annotated[dict[str, str], merge_dicts]
+    summary: str
+    recommendations: list[str]
+    issues: dict[str, list[str]]       # section -> open issues from the latest review
     revisions: int
-    issues: list[str]
+    sent_back: bool                    # did the latest review send work back?
+    human_review: bool                 # pause for a person before finishing
+    human_comment: str
+    report: str
+    trace: Annotated[list[str], operator.add]   # what ran, in order, for the console and GUI
+    review_log: Annotated[list[dict], operator.add]  # every review round: drafts and issues
 
 
-def build_graph(llm: BaseChatModel, tools: list[BaseTool], metrics_path: Path, max_revisions: int):
-    llm_with_tools = llm.bind_tools(tools)
-    reviewer_llm = llm.with_structured_output(Review)
+class SpecialistTask(TypedDict):
+    section: str
+    feedback: list[str]
 
-    def analyst(state: State) -> dict:
-        reply = llm_with_tools.invoke([SystemMessage(ANALYST_PROMPT), *state["messages"]])
-        return {"messages": [reply]}
 
-    def after_analyst(state: State) -> str:
-        return "tools" if state["messages"][-1].tool_calls else "reviewer"
+def fan_out(sections: list[str], issues: dict[str, list[str]]) -> list[Send]:
+    return [Send("specialist", {"section": s, "feedback": issues.get(s, [])}) for s in sections]
 
-    def reviewer(state: State) -> dict:
-        draft = state["messages"][-1].content
-        # Read metrics.json from disk, not from the analyst's messages: the reference
-        # must not depend on what the analyst chose to look at.
-        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-        issues = check_numbers(draft, metrics) + check_coverage(draft, metrics)
-        verdict = reviewer_llm.invoke(REVIEWER_PROMPT.format(
-            facts=json.dumps(review_facts(metrics), indent=1), report=draft))
-        if not verdict.approved:
-            issues += verdict.issues
-        update = {"report": draft, "issues": issues}
-        if issues and state.get("revisions", 0) < max_revisions:
-            update["revisions"] = state.get("revisions", 0) + 1
-            update["messages"] = [HumanMessage(
-                "A reviewer checked your report against metrics.json and found these problems:\n"
-                + "\n".join(f"- {i}" for i in issues)
-                + "\nWrite the corrected text with the same three ## headings. "
-                "Use only numbers from the tool results.")]
-        return update
 
-    def after_reviewer(state: State) -> str:
-        # The reviewer only adds a message when it sends the draft back.
-        return "analyst" if isinstance(state["messages"][-1], HumanMessage) else "finish"
+def build_graph(llm: BaseChatModel, tools: list[BaseTool], out_dir: Path, max_revisions: int,
+                prepare_fn=None):
+    """prepare_fn runs detection + metrics; injectable so tests can skip YOLO."""
+    if prepare_fn is None:
+        from triage_agent.tools import prepare as prepare_fn
+
+    by_name = {t.name: t for t in tools}
+    # Least privilege: each specialist only sees the tools for its own question.
+    specialists = {s.section: build_specialist(s, llm, [by_name[n] for n in s.tools])
+                   for s in SPECIALISTS}
+    reviewer_llm = llm.with_structured_output(SectionReview)
+
+    def load_reference() -> tuple[dict, dict]:
+        metrics = json.loads((out_dir / "metrics.json").read_text(encoding="utf-8"))
+        stats = json.loads((out_dir / "image_stats.json").read_text(encoding="utf-8"))
+        return metrics, stats
+
+    def prepare(state: State) -> dict:
+        return {"overview": prepare_fn(), "revisions": 0, "issues": {},
+                "trace": ["prepare: detection, metrics, image stats (code)"]}
+
+    def start_specialists(state: State) -> list[Send]:
+        return fan_out([s.section for s in SPECIALISTS], {})
+
+    async def specialist(task: SpecialistTask) -> dict:
+        result = await specialists[task["section"]].ainvoke(
+            {"messages": [specialist_request(task["feedback"])]},
+            config={"recursion_limit": 12})
+        calls = [c["name"] for m in result["messages"] for c in (getattr(m, "tool_calls", None) or [])]
+        note = "revision" if task["feedback"] else "first draft"
+        return {"sections": {task["section"]: result["messages"][-1].content.strip()},
+                "trace": [f"{task['section']}_agent ({note}): tools {calls or 'none'}"]}
+
+    async def editor(state: State) -> dict:
+        sections = "\n\n".join(f"[{SECTIONS[k].heading}]\n{v}" for k, v in state["sections"].items())
+        feedback = state.get("issues", {}).get("editor", [])
+        if state.get("human_comment"):
+            feedback = [*feedback, f"Comment from the human reviewer: {state['human_comment']}"]
+        reply = await llm.ainvoke(EDITOR_PROMPT.format(
+            overview=json.dumps(state["overview"], indent=1), sections=sections,
+            feedback=("\nFix these problems from the review:\n" + "\n".join(f"- {f}" for f in feedback))
+            if feedback else ""))
+        summary, recommendations = parse_editor(reply.content)
+        return {"summary": summary, "recommendations": recommendations,
+                "trace": ["editor: summary + recommendations"]}
+
+    async def reviewer(state: State) -> dict:
+        # Reference read from disk, not from the agents' messages: it must not depend on
+        # what the agents chose to look at.
+        metrics, stats = load_reference()
+        editor_text = state["summary"] + "\n" + "\n".join(state["recommendations"])
+        issues = check_sections(state["sections"], editor_text, metrics, stats)
+
+        # One small LLM call per section, each with only its own facts.
+        texts = {**state["sections"], "editor": editor_text}
+        facts = section_facts(metrics, stats)
+
+        async def judge(name: str) -> list[str]:
+            try:
+                review = await reviewer_llm.ainvoke(REVIEWER_PROMPT.format(
+                    facts=json.dumps(facts[name], indent=1), section=texts[name]))
+                return grounded_issues(texts[name], review)
+            except Exception:  # malformed structured output from a small model
+                return []
+
+        for name, found in zip(texts, await asyncio.gather(*(judge(n) for n in texts)), strict=True):
+            if found:
+                issues.setdefault(name, []).extend(found)
+
+        sent_back = bool(issues) and state["revisions"] < max_revisions
+        summary = ", ".join(f"{k} ({len(v)})" for k, v in issues.items()) or "all checks passed"
+        record = {"round": state["revisions"], "sections": dict(state["sections"]),
+                  "editor": editor_text, "issues": issues}
+        return {"issues": issues, "sent_back": sent_back, "review_log": [record],
+                "revisions": state["revisions"] + int(sent_back),
+                "trace": [f"reviewer: {summary}" + (" -> sent back" if sent_back else "")]}
+
+    def after_review(state: State):
+        if not state["sent_back"]:
+            return "human_approval"
+        # Only the specialists whose sections failed rerun; the editor then runs again anyway.
+        failed = [s for s in state["issues"] if s in SECTIONS]
+        return fan_out(failed, state["issues"]) if failed else "editor"
+
+    def human_approval(state: State) -> dict:
+        if not state.get("human_review"):
+            return {}
+        answer = interrupt({"summary": state["summary"], "open_issues": state["issues"]})
+        if answer.get("approved", True):
+            return {"human_comment": "", "trace": ["human: approved"]}
+        return {"human_comment": answer.get("comment", "Please revise."),
+                "trace": [f"human: rejected ({answer.get('comment', '')})"]}
+
+    def after_human(state: State) -> str:
+        return "editor" if state.get("human_comment") else "finish"
 
     def finish(state: State) -> dict:
-        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-        report = state["report"].strip() + "\n\n" + render_tables(metrics)
-        if state.get("issues"):
-            # Out of revisions: ship the report, but say openly what is still unverified.
-            report += "\n\n## Reviewer notes (unresolved)\n" + "\n".join(f"- {i}" for i in state["issues"])
-        return {"report": report}
+        metrics, _ = load_reference()
+        report = render_report(state["summary"], state["sections"], state["recommendations"],
+                               metrics, state.get("issues", {}))
+        return {"report": report, "trace": ["finish: report assembled"]}
 
     graph = StateGraph(State)
-    graph.add_node("analyst", analyst)
-    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("prepare", prepare)
+    graph.add_node("specialist", specialist)
+    graph.add_node("editor", editor)
     graph.add_node("reviewer", reviewer)
+    graph.add_node("human_approval", human_approval)
     graph.add_node("finish", finish)
-    graph.add_edge(START, "analyst")
-    graph.add_conditional_edges("analyst", after_analyst, ["tools", "reviewer"])
-    graph.add_edge("tools", "analyst")
-    graph.add_conditional_edges("reviewer", after_reviewer, ["analyst", "finish"])
+    graph.add_edge(START, "prepare")
+    graph.add_conditional_edges("prepare", start_specialists, ["specialist"])
+    graph.add_edge("specialist", "editor")
+    graph.add_edge("editor", "reviewer")
+    graph.add_conditional_edges("reviewer", after_review, ["specialist", "editor", "human_approval"])
+    graph.add_conditional_edges("human_approval", after_human, ["editor", "finish"])
     graph.add_edge("finish", END)
-    return graph.compile()
+    # The checkpointer saves state after every step; interrupt() needs it to pause and resume.
+    return graph.compile(checkpointer=MemorySaver())
+
