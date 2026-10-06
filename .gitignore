@@ -28,3 +28,6 @@ reports/*.json
 
 # ----- logs -----
 *.log
+
+# ----- build output for deployment (recreated by scripts/build_space.py) -----
+dist/

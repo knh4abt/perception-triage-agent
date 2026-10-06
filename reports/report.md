@@ -2,7 +2,7 @@
 
 ## Summary
 
-The object detector YOLOv8n has a precision of 0.822 and a recall of 0.603 overall. The weakest class is the truck, with a precision of 0.435 and a recall of 0.333. The main failure mode is the detection of small objects, with 227 out of 360 small person objects being missed.
+The object detector YOLOv8n has a precision of 0.822 and a recall of 0.603. The weakest class is truck, with a precision of 0.435 and a recall of 0.333. The main failure mode is the inability to detect small objects, particularly small person and car objects.
 
 ## Where it fails: object size
 
@@ -10,7 +10,7 @@ The largest failure of YOLOv8n on COCO street images is that 227 out of 360 smal
 
 ## Where it fails: class confusions and false alarms
 
-The real classes detected as a different class are the truck, which was detected as a car 13 times. The false alarms come from the background, with 9 truck instances being false positives. The class with the lowest precision is the truck, with a precision of 0.435.
+A real car was detected as truck 4 times, a real truck was detected as bus 2 times, and a real truck was detected as car 2 times. The class with the lowest precision is person, with 290 missed completely.
 
 ## What the hard images have in common
 
@@ -20,8 +20,9 @@ The first file name of the hardest images is "000000490936.jpg". The statistics 
 
 ## Recommendations
 
-1. Investigate the effect of high brightness on object detection, as the hardest images have a mean brightness of 128.0.
-2. Improve the detection of small objects, as the recall for small person objects is 0.369 and the recall for small car objects is 0.216.
+1. Analyze the characteristics of the hardest images, including their brightness, object count, and object size, to identify potential causes of the model's failure.
+2. Improve the model's ability to distinguish between classes, particularly for small objects, as they have the lowest recall.
+3. Investigate the effect of class confusions and false alarms on detection performance, particularly for the class "truck", which has the lowest precision.
 
 ## Per-class results
 
@@ -63,9 +64,10 @@ Images with no detections at all: 000000177213.jpg, 000000222735.jpg, 0000002639
 
 ## Reviewer notes (unresolved)
 
-- confusion: "The class with the lowest precision is the truck, with a precision of 0.435." contradicts: The class with the lowest precision is the truck
-- confusion: "The false alarms come from the background, with 9 truck instances being false positives." contradicts: a real truck was detected as bus: 2 times
-- confusion: "The real classes detected as a different class are the truck, which was detected as a car 13 times." contradicts: a real car was detected as truck: 4 times
-- editor: "Improve the detection of small objects, as the recall for small person objects is 0.369 and the recall for small car objects is 0.216." contradicts: The recall for small person objects is 0.369, which is higher than the recall for small car objects (0.216).
-- editor: "Investigate the effect of high brightness on object detection, as the hardest images have a mean brightness of 128.0." contradicts: The hardest images have a mean brightness of 128.0, but the all images have a mean brightness of 112.9, which is lower.
-- editor: "The weakest class is the truck, with a precision of 0.435 and a recall of 0.333." contradicts: The recall for truck is 0.333, but the precision is 0.435, which is not the weakest class.
+- confusion: The class with the lowest precision is truck (0.435), not what the section says.
+- confusion: "A real car was detected as truck 4 times, a real truck was detected as bus 2 times, and a real truck was detected as car 2 times." contradicts: a real car was detected as truck: 4 times
+- confusion: "The class with the lowest precision is person, with 290 missed completely." contradicts: lowest_precision_class: truck
+- editor: "Improve the model's ability to distinguish between classes, particularly for small objects, as they have the lowest recall." contradicts: The recall of small objects is not the lowest, e.g. person has a recall of 0.648
+- editor: "Investigate the effect of class confusions and false alarms on detection performance, particularly for the class "truck", which has the lowest precision." contradicts: The lowest precision class is truck, but it is not the only class with low precision, e.g. car has a precision of 0.667
+- editor: "The main failure mode is the inability to detect small objects, particularly small person and car objects." contradicts: 227 of 360 small person objects were missed
+- editor: "The weakest class is truck, with a precision of 0.435 and a recall of 0.333." contradicts: The lowest precision class is truck

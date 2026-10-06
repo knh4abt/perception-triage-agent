@@ -46,7 +46,18 @@ async def run(out_dir: Path, approve: bool) -> str:
         local = [StructuredTool.from_function(f) for f in tools.METRICS_TOOLS + tools.IMAGE_TOOLS]
         return await run_graph(cfg, local, out_dir, approve)
 
-    client = MultiServerMCPClient({name: {
+    client = MultiServerMCPClient(server_connections(cfg))
+    # One open session per server for the whole run: one process each, not one per tool call.
+    async with AsyncExitStack() as stack:
+        agent_tools = []
+        for name in MCP_SERVERS:
+            session = await stack.enter_async_context(client.session(name))
+            agent_tools += await load_mcp_tools(session)
+        return await run_graph(cfg, agent_tools, out_dir, approve)
+
+
+def server_connections(cfg: dict) -> dict:
+    connections = {name: {
         "transport": "stdio",
         # Same interpreter as the CLI, so each server sees the same .venv packages.
         "command": sys.executable,
@@ -55,14 +66,13 @@ async def run(out_dir: Path, approve: bool) -> str:
         # forward ours so TRIAGE_IMAGES/TRIAGE_OUT and .env keys arrive.
         "env": dict(os.environ),
         "cwd": str(Path.cwd()),
-    } for name, module in MCP_SERVERS.items()})
-    # One open session per server for the whole run: one process each, not one per tool call.
-    async with AsyncExitStack() as stack:
-        agent_tools = []
-        for name in MCP_SERVERS:
-            session = await stack.enter_async_context(client.session(name))
-            agent_tools += await load_mcp_tools(session)
-        return await run_graph(cfg, agent_tools, out_dir, approve)
+    } for name, module in MCP_SERVERS.items()}
+    # A deployed metrics server replaces the local subprocess; the agents do not notice.
+    url = os.environ.get("METRICS_MCP_URL") or cfg["agent"].get("metrics_server_url")
+    if url:
+        connections["metrics"] = {"transport": "streamable_http", "url": url}
+        print(f"  metrics tools from remote server: {url}")
+    return connections
 
 
 def ask_human(payload: dict) -> dict:

@@ -12,7 +12,7 @@ langchain-ollama>=0.2
 langchain-openai>=0.2          # only used when llm.provider is azure
 
 # --- tool serving ---
-mcp>=1.2
+mcp>=1.2,<2                    # 2.x renamed FastMCP; code is written for 1.x
 langchain-mcp-adapters>=0.1
 
 # --- config ---

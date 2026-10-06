@@ -14,8 +14,6 @@ from collections import Counter
 from pathlib import Path
 
 from triage_agent.config import load_config
-from triage_agent.detector import run_detection as _detect
-from triage_agent.detector import save_predictions
 from triage_agent.image_stats import build_image_stats, save_image_stats
 from triage_agent.metrics import compute_metrics, largest_miss_group, load_ground_truth
 
@@ -39,7 +37,11 @@ def prepare(rerun_detection: bool = False) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_path = out_dir / "predictions.json"
     if rerun_detection or not pred_path.exists():
-        save_predictions(_detect(images_dir, cfg), out_dir)
+        # Imported here, not at the top: it pulls in ultralytics and torch (~2 GB), which the
+        # deployed metrics server never needs because it only reads metrics.json.
+        from triage_agent.detector import run_detection, save_predictions
+
+        save_predictions(run_detection(images_dir, cfg), out_dir)
     preds = json.loads(pred_path.read_text(encoding="utf-8"))
 
     file_names = sorted(p.name for p in images_dir.glob("*.jpg"))

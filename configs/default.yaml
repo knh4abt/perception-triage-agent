@@ -24,6 +24,7 @@ llm:
 
 agent:
   use_mcp: true                        # false: call tools in-process (handy for debugging)
+  metrics_server_url: null             # e.g. https://<user>-<space>.hf.space/mcp; null = start it locally
   max_revisions: 2                     # Reviewer can send the draft back at most twice
 
 output:
