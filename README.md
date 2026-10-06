@@ -11,12 +11,22 @@ fails. A local Llama 3.1 8B agent reads these results through tools and writes a
 A second step, the Reviewer, checks the report against the computed numbers and sends it
 back if something is wrong.
 
+<p align="center">
+  <img src="docs/agent-story.gif" width="600" alt="Detector misses objects, the agent explains it wrongly, the reviewer catches it, the agent fixes it" /><br/>
+  <sub>A real catch from the latest run (reports/run_log.json).</sub>
+</p>
+
 ---
 
 ## Results
 
 **The detector misses small objects.** Persons smaller than 32x32 pixels are found 37% of
 the time, large persons 97%. The biggest gap: 227 of 360 small persons were missed.
+
+<p align="center">
+  <img src="docs/detector-misses.gif" width="560" alt="YOLOv8n on a COCO street scene: green boxes found, red boxes missed" /><br/>
+  <sub>000000490936.jpg, the hardest image: 4 of 16 objects found. Green: found. Red: missed.</sub>
+</p>
 
 | Class | Recall, small | Recall, medium | Recall, large |
 |---|---:|---:|---:|
