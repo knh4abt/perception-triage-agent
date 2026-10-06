@@ -18,10 +18,8 @@ __pycache__/
 data/
 *.pt
 
-# ----- private notes and assistant config -----
+# ----- private notes -----
 _study/
-CLAUDE.md
-.claude/
 
 # ----- generated outputs (report.md is kept as an example run) -----
 reports/*.json

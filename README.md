@@ -14,22 +14,12 @@ Everything runs locally and for free: Llama 3.1 8B through Ollama, no cloud API.
   <sub>A real catch from a run: the agent said "darker", the measured brightness says "brighter".</sub>
 </p>
 
-<p align="center">
-  <img src="docs/agent-story.gif" width="600" alt="Detector misses objects, the agent explains it wrongly, the reviewer catches it, the agent fixes it" /><br/>
-  <sub>A real catch from the latest run (reports/run_log.json).</sub>
-</p>
-
 ---
 
 ## What the detector gets wrong
 
 **It misses small objects.** Persons smaller than 32x32 pixels are found 37% of the time,
 large persons 97%. The single biggest failure: **227 of 360 small persons were missed**.
-
-<p align="center">
-  <img src="docs/detector-misses.gif" width="560" alt="YOLOv8n on a COCO street scene: green boxes found, red boxes missed" /><br/>
-  <sub>000000490936.jpg, the hardest image: 4 of 16 objects found. Green: found. Red: missed.</sub>
-</p>
 
 | Class | Recall, small | Recall, medium | Recall, large |
 |---|---:|---:|---:|
@@ -129,6 +119,50 @@ Example output: [`reports/report.md`](reports/report.md). In that run one real m
 survived both review rounds (the confusion agent named person as the lowest-precision
 class; it is truck). The code check caught it and it is listed under "Reviewer notes" at
 the end, next to some false alarms from the LLM reviewer.
+
+---
+
+## Design decisions
+
+| Decision | Alternative I did not take | Why |
+|---|---|---|
+| Three specialists in parallel, fixed in code | One LLM "supervisor" agent that decides who runs | Every report needs all three; letting an 8B model route would only add a way to fail |
+| Each agent sees only its own tools | Every agent gets all tools | Shorter prompts for a small model, and a clear owner for every section |
+| Reviewer sends a section back to its owner only | Rewrite the whole report | Faster rounds; a correct section is never put at risk again |
+| Code writes all tables and headings | The LLM writes the whole report | The model changed formats and invented numbers when it copied tables |
+| Reviewer reads the data from disk | Reviewer trusts what the agents looked at | A check must not share the blind spots of what it checks |
+| Tools behind two MCP servers | Plain Python imports | Agents and tools are decoupled; the metrics server already runs over HTTP for deployment |
+| Local Llama 3.1 8B | A large hosted model | Free and private, and its mistakes are visible, which is what this project studies |
+
+## How I know it works
+
+Each rule the report must follow is enforced by code and proven by a unit test. Most tests
+use the exact mistake an agent made in a real run.
+
+| Rule for the report | Enforced by | Test |
+|---|---|---|
+| Every number exists in the measured data | `check_numbers` | `test_check_numbers_flags_invented_value` |
+| The biggest failure is stated with its exact missed count | `check_coverage` | `test_coverage_rejects_total_written_as_missed` |
+| "A detected as B N times" matches the confusion table | `check_confusion_claims` | `test_confusion_claims_must_match_the_table` |
+| The lowest-precision class is named correctly | `check_lowest_precision` | `test_lowest_precision_must_name_the_right_class` |
+| "Darker/brighter" matches the measured brightness | `check_brightness_claims` | `test_brightness_claim_must_match_measurement` |
+| LLM-review complaints quote real text and a fact that disagrees | `grounded_issues` | `test_reviewer_issue_dropped_when_its_fact_agrees_with_the_sentence` |
+| A rewrite goes only to the agent that owns the section | `fan_out` | `test_fan_out_sends_only_failed_sections_with_their_feedback` |
+| Parallel agents never overwrite each other | `merge_dicts` reducer | `test_merge_dicts_keeps_parallel_sections_and_replaces_rewrites` |
+| The whole graph runs end to end | `build_graph` | `test_full_graph_runs_and_assembles_report` (scripted fake LLM) |
+
+What is not covered by a test: whether the LLM reviewer judges well. That is measured per run
+in `reports/run_log.json`, and the open issues are printed in the report.
+
+Other engineering habits in this repo:
+
+- **Reproducible data:** fixed seed for the 200 images; the label file is checked against the
+  official COCO counts after download.
+- **Every LLM call is bounded:** a token limit per answer and a limit on loop rounds, after a
+  call that never stopped generating.
+- **Pinned versions for deployment:** an open version range once pulled a new major release
+  of the MCP library into the container and broke it on start.
+- **CI on every push:** linter, 33 tests and a Docker build with a start-up check.
 
 ---
 
