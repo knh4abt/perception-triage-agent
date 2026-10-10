@@ -8,6 +8,10 @@ wrong parts back to be fixed.
 
 Everything runs on a laptop, for free (Llama 3.1 8B through Ollama).
 
+**Try the results online:** [triage-metrics.onrender.com](https://triage-metrics.onrender.com)
+(a web page for people and an MCP server for AI agents; on the free plan it can take a
+minute to wake up).
+
 <p align="center">
   <img src="docs/agent-story.gif" width="600" alt="An agent calls the hard images darker, the checker says they are brighter, the agent fixes it" /><br/>
   <sub>A real catch: an agent wrote "darker", the measured data says "brighter".</sub>
@@ -67,6 +71,12 @@ python -m triage_agent.cli             # writes reports/report.md (about 4 minut
 
 Add `--approve` to read and approve the report yourself before it is saved.
 
+To let the agents use the online tools instead of the local ones:
+
+```bash
+METRICS_MCP_URL=https://triage-metrics.onrender.com/gradio_api/mcp/ python -m triage_agent.cli
+```
+
 ---
 
 ## Limits
@@ -106,7 +116,7 @@ the LLM, pytest (33 tests, no LLM needed), Docker, GitHub Actions.
 | The whole workflow runs end to end | `build_graph` | `test_full_graph_runs_and_assembles_report` |
 
 **Engineering:** fixed seed and checked label counts for the data, a token limit on every LLM
-call, pinned versions for the deployable container (`deploy/`), CI on every push.
+call, pinned versions for the deployed container (`deploy/`, running on Render), CI on every push.
 
 **Detector numbers:** overall precision 0.822, recall 0.603 (confidence 0.25, IoU 0.5,
 985 labelled objects). Labels come from a Hugging Face copy of COCO, checked against the
